@@ -104,6 +104,14 @@ class Mitel5000Connection : public SocketStreamerConnection {
 		}
 
 		virtual void ProcessData() {
+			CStdString s(m_buf);
+			CStdString logMsg;
+
+			FLOG_INFO(getLog(),"DATA : %s",s);
+
+
+
+
 		}
 };
 
