@@ -29,7 +29,6 @@ class DLL_IMPORT_EXPORT_ORKBASE SocketStreamer {
 public:
 	static void Initialize();
 	static void ThreadHandler(void *args);
-	static int Connect(TcpAddress* tcpAddress, ACE_INET_Addr& srvr, ACE_SOCK_Connector& connector, ACE_SOCK_Stream& peer);
 };
 
 #endif

@@ -13,152 +13,218 @@
 
 #include "SocketStreamer.h"
 
-static LoggerPtr s_log;
+static LoggerPtr getLog() {
+	static LoggerPtr s_log = Logger::getLogger("socketstreamer");
+	return s_log;
+}
+
+class SocketStreamerConnection {
+
+	public:
+		CStdString m_target;
+		TcpAddress m_addr;
+		ACE_SOCK_Stream m_peer;
+		char m_buf[1024];
+
+		static bool DoesAcceptProtocol(CStdString protocol) {
+			return false; // only let derived classes accept protocols
+		}
+
+		SocketStreamerConnection(struct in_addr & hostAddr, int port) {
+			m_addr.port = port;
+			memcpy(&m_addr.ip, &hostAddr, sizeof(struct in_addr));
+		}
+
+		bool Connect()
+		{
+			char szIp[16];
+			ACE_INET_Addr server;
+			ACE_SOCK_Connector connector;
+
+			memset(m_buf, 0, sizeof(m_buf));
+
+			memset(&szIp, 0, sizeof(szIp));
+			ACE_OS::inet_ntop(AF_INET, (void*)&m_addr.ip, szIp, sizeof(szIp));
+
+			server.set(m_addr.port, szIp);
+			if(connector.connect(m_peer, server) == -1) {
+				return false;
+			}
+			return Init();
+		}
+
+		void Close() {
+			m_peer.close();
+		}
+
+		size_t Recv() {
+			size_t bytesRead = m_peer.recv(m_buf, sizeof(m_buf));
+
+			if (bytesRead>0) {
+				ProcessData();
+			}
+			return bytesRead;
+		}
+
+	protected:
+		virtual void ProcessData() {
+		}
+		virtual bool Init() {
+			return true; // default no handshake
+		}
+};
+
+class Mitel3000Connection : public SocketStreamerConnection {
+	public:
+		Mitel3000Connection(struct in_addr & hostAddr, int port) :  SocketStreamerConnection(hostAddr, port) {
+		}
+
+		static bool DoesAcceptProtocol(CStdString protocol) {
+			return 0 == strcmp(protocol, "mitel3000");
+		}
+};
+
+class Mitel5000Connection : public SocketStreamerConnection {
+
+	public:
+		Mitel5000Connection(struct in_addr & hostAddr, int port) :  SocketStreamerConnection(hostAddr, port) {
+		}
+
+		static bool DoesAcceptProtocol(CStdString protocol) {
+			return 0 == strcmp(protocol, "mitel5000");
+		}
+
+	protected:
+		virtual bool  Init() {
+			char *buf;
+			const unsigned char s[] = {0x03,0x00,0x00,0x00,0x84,0x00,0x00}; 	
+			int len;
+			m_peer.send_n(s, 7);	 
+			return true;
+		}
+
+		virtual void ProcessData() {
+		}
+};
+
+SocketStreamerConnection* CreateSocketStreamer(CStdString target) {
+
+	CStdString tcpAddress=target;
+	CStdString logMsg;
+	CStdString host;
+	int port = 0;
+	struct in_addr hostAddr;
+
+	CStdString protocol = "mitel3000"; // use this if nothing is specified
+	size_t pos = tcpAddress.find("://");
+	if (pos != std::string::npos) {
+		protocol = tcpAddress.substr(0,pos);
+		tcpAddress = tcpAddress.substr(pos+sizeof("://")-1);
+	}
+	protocol.ToLower();
+
+	memset(&hostAddr, 0, sizeof(hostAddr));
+	host = GetHostFromAddressPair(tcpAddress);
+	port = GetPortFromAddressPair(tcpAddress);
+
+	if (!host.size() || port == 0) {
+		FLOG_ERROR(getLog(),"Invalid host:%s or port:%d -- check SocketStreamerTargets in config.xml", host, port);
+		return NULL;
+	}
+
+	if (!ACE_OS::inet_aton((PCSTR)host, &hostAddr)) {
+		FLOG_ERROR(getLog(),"Invalid host:%s -- check SocketStreamerTargets in config.xml", host);
+		return NULL;
+	}
+
+	SocketStreamerConnection * ssc = NULL;
+
+	if (!ssc && Mitel3000Connection::DoesAcceptProtocol(protocol)) {
+		ssc = new Mitel3000Connection(hostAddr,port);
+	}
+
+	if (!ssc && Mitel5000Connection::DoesAcceptProtocol(protocol)) {
+		ssc = new Mitel5000Connection(hostAddr,port);
+	}
+
+	if (ssc) {
+		ssc->m_target = target;
+	}
+	else {
+		FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol);
+	}
+
+	return ssc;
+}
 
 void SocketStreamer::Initialize()
 {
 	std::list<CStdString>::iterator it;
 	CStdString logMsg;
 
-	s_log = Logger::getLogger("socketstreamer");
-
-	for(it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++)
+	for (it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++)
 	{
-		CStdString tcpAddress = *it;
-		CStdString host;
-		int port = 0;
-		struct in_addr hostAddr;
+		CStdString target=*it;
 
-		memset(&hostAddr, 0, sizeof(hostAddr));
-		host = GetHostFromAddressPair(tcpAddress);
-		port = GetPortFromAddressPair(tcpAddress);
-
-		if(!host.size() || port == 0)
-		{
-			logMsg.Format("Invalid host:%s or port:%d -- check SocketStreamerTargets in config.xml", host, port);
-			LOG4CXX_WARN(s_log, logMsg);
+		SocketStreamerConnection * ssc = CreateSocketStreamer(target);
+		if (!ssc) {
 			continue;
 		}
+		ssc->m_target = target;
 
-		if(!ACE_OS::inet_aton((PCSTR)host, &hostAddr))
+		if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc))
 		{
-			logMsg.Format("Invalid host:%s -- check SocketStreamerTargets in config.xml", host);
-			LOG4CXX_WARN(s_log, logMsg);
-			continue;
-		}
-
-		TcpAddress* addr = new TcpAddress;
-
-		addr->port = port;
-		memcpy(&addr->ip, &hostAddr, sizeof(struct in_addr));
-
-		if(!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)addr))
-		{
-			delete addr;
-			logMsg.Format("Failed to start thread on %s,%d", host, port);
-			LOG4CXX_WARN(s_log, logMsg);
-			continue;
+			delete ssc;
+			FLOG_WARN(getLog(),"Failed to start thread on %s", target);
 		}
 	}
 }
 
+#define NANOSLEEP(sec,nsec) { struct timespec ts; ts.tv_sec = sec; ts.tv_nsec = nsec; ACE_OS::nanosleep(&ts, NULL);}
+/* #define RUN_EVERY(interval,lastRun,code) if(time(NULL)-lastRun>interval){code;lastRun=time(NULL);}; */
 
 void SocketStreamer::ThreadHandler(void *args)
 {
 	SetThreadName("orka:sockstream");
 
-	TcpAddress* tcpAddress = (TcpAddress*)args;
-	char szIp[16];
-	char buf[1024];
-	CStdString ipPort;
-	ACE_INET_Addr srvr;
-	ACE_SOCK_Connector connector;
-	ACE_SOCK_Stream peer;
+	SocketStreamerConnection * ssc = (SocketStreamerConnection *) args; 
+	CStdString logMsg;
+	CStdString ipPort = ssc->m_target;
 	bool connected = false;
-	struct timespec ts;
-	time_t nextReportConnFail = 0;
-	time_t nextReportBytesRead = 0;
+	time_t lastLogTime = 0;
 	int bytesRead = 0;
 	unsigned long int bytesSoFar = 0;
 
-	memset(&szIp, 0, sizeof(szIp));
-	memset(buf, 0, sizeof(buf));
-
-	ACE_OS::inet_ntop(AF_INET, (void*)&tcpAddress->ip, szIp, sizeof(szIp));
-	ipPort.Format("%s,%u", szIp, tcpAddress->port);
-
-	do {
-		if(!connected)
-		{
-			if(SocketStreamer::Connect(tcpAddress, srvr, connector, peer) == 0)
-			{
-				LOG4CXX_INFO(s_log, "Connected to:" + ipPort);
-				connected = true;
-				nextReportConnFail = 0;
-			}
-			else
-			{
-				if(time(NULL) >= nextReportConnFail)
-				{
-					LOG4CXX_WARN(s_log, "Couldn't connect to:" + ipPort + ": " + CStdString(strerror(errno)));
-					nextReportConnFail = time(NULL) + 60;
+	while(1) {
+		if (!connected) {
+			lastLogTime = 0;
+			while (!ssc->Connect()) {
+				if (time(NULL) - lastLogTime > 60 ) {
+					FLOG_WARN(getLog(), "Couldn't connect to: %s error: %s", ipPort, CStdString(strerror(errno)));
+					lastLogTime = time(NULL);
 				}
-
-				ts.tv_sec = 2;
-				ts.tv_nsec = 0;
-				ACE_OS::nanosleep(&ts, NULL);
-
-				continue;
+				NANOSLEEP(2,0);
 			}
+			connected=true;
+			lastLogTime = 0;
 		}
 
-		bytesRead = peer.recv(buf, sizeof(buf));
-		if(bytesRead < 0)
+		bytesRead = ssc->Recv();
+		if(bytesRead <= 0)
 		{
-			LOG4CXX_WARN(s_log, "Connection to:" + ipPort + " closed: " + CStdString(strerror(errno)));
-			peer.close();
-			connected = false;
-			continue;
-		}
-
-		if(bytesRead == 0)
-		{
-			LOG4CXX_WARN(s_log, "Connection to:" + ipPort + " closed: Remote host closed connection");
-			peer.close();
+			CStdString errorString(bytesRead==0?"Remote host closed connection":strerror(errno));
+			FLOG_WARN(getLog(), "Connection to: %s closed. error :%s ", ipPort, errorString);
+			ssc->Close();
 			connected = false;
 			continue;
 		}
 
 		bytesSoFar += bytesRead;
-		if(time(NULL) > nextReportBytesRead)
-		{
-			LOG4CXX_INFO(s_log, "Read " + FormatDataSize(bytesSoFar) + " from " + ipPort + " so far");
-			nextReportBytesRead = time(NULL) + 60;
+		if (time(NULL) - lastLogTime > 60 ) {
+			FLOG_INFO(getLog(),"Read %d from %s so far", FormatDataSize(bytesSoFar), ipPort);
+			lastLogTime = time(NULL);
 		}
-
-		if(bytesSoFar >= 4000000000UL)
-		{
-			bytesSoFar = 0;
-		}
-
-		ts.tv_sec = 0;
-		ts.tv_nsec = 1;
-		ACE_OS::nanosleep(&ts, NULL);
-	} while(1);
-}
-
-int SocketStreamer::Connect(TcpAddress* tcpAddress, ACE_INET_Addr& srvr, ACE_SOCK_Connector& connector, ACE_SOCK_Stream& peer)
-{
-	char szIp[16];
-
-	memset(&szIp, 0, sizeof(szIp));
-	ACE_OS::inet_ntop(AF_INET, (void*)&tcpAddress->ip, szIp, sizeof(szIp));
-
-	srvr.set(tcpAddress->port, szIp);
-	if(connector.connect(peer, srvr) == -1)
-	{
-		return -1;
+		NANOSLEEP(0,1);
 	}
-
-	return 0;
 }
+
