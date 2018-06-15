@@ -59,12 +59,14 @@ class SocketStreamerConnection {
 		}
 
 		size_t Recv() {
-			size_t bytesRead = m_peer.recv(m_buf, sizeof(m_buf));
+			CStdString logMsg;
+			m_bytesRead = m_peer.recv(m_buf, sizeof(m_buf));
 
-			if (bytesRead>0) {
+			if (m_bytesRead>0) {
 				ProcessData();
+				FLOG_INFO(getLog(),"DATA : %d",m_bytesRead);
 			}
-			return bytesRead;
+			return m_bytesRead;
 		}
 
 	protected:
