@@ -41,6 +41,29 @@ bool StringIsPhoneNumber(CStdString& string)
 	return true;
 }
 
+bool ChopToken(CStdString &token, CStdString separator, CStdString &s) {
+	size_t pos = s.find(separator);
+	if (pos != std::string::npos) {
+		token = s.substr(0,pos);
+		s = s.substr(pos+separator.length());
+		return true;
+	}
+	return false;
+}
+
+void ParseSocketStreamerTarget(CStdString target, CStdString &ip,int &port,CStdString &protocol, CStdString &pass) {
+	CStdString logMsg;
+
+	ChopToken(protocol,"://",target);
+	protocol.ToLower();
+
+	ChopToken(pass,"@",target);
+
+	ChopToken(ip,":",target);
+
+	port = strtol(target,NULL,0);
+}
+
 bool MatchesStringList(CStdString& string, std::list<CStdString>& stringList)
 {
 	if(string.size() == 0)

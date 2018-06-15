@@ -88,7 +88,9 @@ class Mitel3000Connection : public SocketStreamerConnection {
 class Mitel5000Connection : public SocketStreamerConnection {
 
 	public:
-		Mitel5000Connection(struct in_addr & hostAddr, int port) :  SocketStreamerConnection(hostAddr, port) {
+		Mitel5000Connection(struct in_addr & hostAddr, int port, CStdString pass) :  SocketStreamerConnection(hostAddr, port),
+			m_pass(pass)
+		{
 		}
 
 		static bool DoesAcceptProtocol(CStdString protocol) {
@@ -96,6 +98,8 @@ class Mitel5000Connection : public SocketStreamerConnection {
 		}
 
 	protected:
+		CStdString m_pass;
+
 		virtual bool  Init() {
 			char *buf;
 			const unsigned char s[] = {0x03,0x00,0x00,0x00,0x84,0x00,0x00}; 	
@@ -118,71 +122,25 @@ class Mitel5000Connection : public SocketStreamerConnection {
 		}
 };
 
-CStdString GetHostFromAddressPair(CStdString& hostname)
+SocketStreamerConnection* CreateSocketStreamer(CStdString target)
 {
-        int colidx = 0;
-
-        if((colidx = hostname.Find(CStdString(":"))) >= 0)
-        {
-                return hostname.Left(colidx);
-        }
-
-        return hostname;
-}
-
-int GetPortFromAddressPair(CStdString& hostname)
-{
-        int colidx = 0;
-
-        if((colidx = hostname.Find(CStdString(":"))) >= 0)
-        {
-		CStdString portString;
-
-		portString = hostname.Right(hostname.size() - colidx - 1);
-                return StringToInt(portString);
-        }
-
-        return 0;
-}
-
-CStdString ChopToken(CStdString separator) {
-	CStdString s;
-	/* size_t pos = XXX.find("://"); */
-	/* if (pos != std::string::npos) { */
-	/* 	protocol = XXX.substr(0,pos); */
-	/* 	XXX = XXX.substr(pos+sizeof("://")-1); */
-	/* } */
-	/* protocol.ToLower(); */
-	return s;
-}
-
-SocketStreamerConnection* CreateSocketStreamer(CStdString target) {
-
-	CStdString XXX=target;
 	CStdString logMsg;
-	CStdString host;
-	int port = 0;
 	struct in_addr hostAddr;
 
-	CStdString protocol = "mitel3000"; // use this if nothing is specified
-	size_t pos = XXX.find("://");
-	if (pos != std::string::npos) {
-		protocol = XXX.substr(0,pos);
-		XXX = XXX.substr(pos+sizeof("://")-1);
-	}
-	protocol.ToLower();
+	CStdString protocol("mitel3000"); // use this if nothing is specified
+	CStdString ip;
+	int port;
+	CStdString pass;
 
-	memset(&hostAddr, 0, sizeof(hostAddr));
-	host = GetHostFromAddressPair(XXX);
-	port = GetPortFromAddressPair(XXX);
+	ParseSocketStreamerTarget(target,ip,port,protocol,pass);
 
-	if (!host.size() || port == 0) {
-		FLOG_ERROR(getLog(),"Invalid host:%s or port:%d -- check SocketStreamerTargets in config.xml", host, port);
+	if (!ACE_OS::inet_aton((PCSTR)ip, &hostAddr)) {
+		FLOG_ERROR(getLog(),"Invalid host:%s in target:%s -- check SocketStreamerTargets in config.xml", ip);
 		return NULL;
 	}
 
-	if (!ACE_OS::inet_aton((PCSTR)host, &hostAddr)) {
-		FLOG_ERROR(getLog(),"Invalid host:%s -- check SocketStreamerTargets in config.xml", host);
+	if (port == 0) {
+		FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port);
 		return NULL;
 	}
 
@@ -193,7 +151,7 @@ SocketStreamerConnection* CreateSocketStreamer(CStdString target) {
 	}
 
 	if (!ssc && Mitel5000Connection::DoesAcceptProtocol(protocol)) {
-		ssc = new Mitel5000Connection(hostAddr,port);
+		ssc = new Mitel5000Connection(hostAddr,port,pass);
 	}
 
 	if (ssc) {
