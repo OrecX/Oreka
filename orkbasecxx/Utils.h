@@ -30,6 +30,8 @@
 #include "OrkBase.h"
 #include "dll.h"
 
+#define NANOSLEEP(sec,nsec) { struct timespec ts; ts.tv_sec = sec; ts.tv_nsec = nsec; ACE_OS::nanosleep(&ts, NULL);}
+
 //============================================
 // String related stuff
 

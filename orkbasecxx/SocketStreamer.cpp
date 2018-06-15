@@ -90,8 +90,7 @@ class Mitel5000Connection : public SocketStreamerConnection {
 	public:
 		Mitel5000Connection(struct in_addr & hostAddr, int port, CStdString pass) :  SocketStreamerConnection(hostAddr, port),
 			m_pass(pass)
-		{
-		}
+		{}
 
 		static bool DoesAcceptProtocol(CStdString protocol) {
 			return 0 == strcmp(protocol, "mitel5000");
@@ -101,10 +100,18 @@ class Mitel5000Connection : public SocketStreamerConnection {
 		CStdString m_pass;
 
 		virtual bool  Init() {
-			char *buf;
-			const unsigned char s[] = {0x03,0x00,0x00,0x00,0x84,0x00,0x00}; 	
-			int len;
-			m_peer.send_n(s, 7);	 
+			int size=7;
+			unsigned char s[100] = {0x03,0x00,0x00,0x00,0x84,0x00,0x00};
+			int i;
+			for (i=0;i<m_pass.length();i++) {
+				s[5+i] = m_pass[i];
+			}
+			size += m_pass.length();
+			s[0] = size-4;
+			s[size-1] = 0x00;
+			s[size-2] = 0x00;
+
+			m_peer.send_n(s, size);
 			return true;
 		}
 
@@ -181,8 +188,6 @@ void SocketStreamer::Initialize()
 	}
 }
 
-#define NANOSLEEP(sec,nsec) { struct timespec ts; ts.tv_sec = sec; ts.tv_nsec = nsec; ACE_OS::nanosleep(&ts, NULL);}
-/* #define RUN_EVERY(interval,lastRun,code) if(time(NULL)-lastRun>interval){code;lastRun=time(NULL);}; */
 
 void SocketStreamer::ThreadHandler(void *args)
 {
