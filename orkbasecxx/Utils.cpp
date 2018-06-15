@@ -59,33 +59,6 @@ bool MatchesStringList(CStdString& string, std::list<CStdString>& stringList)
 	return false;
 }
 
-CStdString GetHostFromAddressPair(CStdString& hostname)
-{
-        int colidx = 0;
-
-        if((colidx = hostname.Find(CStdString(":"))) >= 0)
-        {
-                return hostname.Left(colidx);
-        }
-
-        return hostname;
-}
-
-int GetPortFromAddressPair(CStdString& hostname)
-{
-        int colidx = 0;
-
-        if((colidx = hostname.Find(CStdString(":"))) >= 0)
-        {
-		CStdString portString;
-
-		portString = hostname.Right(hostname.size() - colidx - 1);
-                return StringToInt(portString);
-        }
-
-        return 0;
-}
-
 CStdString FormatDataSize(unsigned long int size)
 {
 	CStdString sizeStr;
