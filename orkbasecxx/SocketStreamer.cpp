@@ -25,6 +25,7 @@ class SocketStreamerConnection {
 		TcpAddress m_addr;
 		ACE_SOCK_Stream m_peer;
 		char m_buf[1024];
+		size_t m_bytesRead;
 
 		static bool DoesAcceptProtocol(CStdString protocol) {
 			return false; // only let derived classes accept protocols
@@ -104,14 +105,16 @@ class Mitel5000Connection : public SocketStreamerConnection {
 		}
 
 		virtual void ProcessData() {
-			CStdString s(m_buf);
 			CStdString logMsg;
 
+			CStdString s("");
+
+			for (int i=0;i<m_bytesRead;i++) {
+				if (isprint(m_buf[i])) {
+					s += m_buf[i];
+				}
+			}
 			FLOG_INFO(getLog(),"DATA : %s",s);
-
-
-
-
 		}
 };
 
@@ -157,12 +160,11 @@ SocketStreamerConnection* CreateSocketStreamer(CStdString target) {
 
 	if (ssc) {
 		ssc->m_target = target;
-	}
-	else {
-		FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol);
+		return ssc;
 	}
 
-	return ssc;
+	FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol);
+	return NULL;
 }
 
 void SocketStreamer::Initialize()
@@ -175,12 +177,7 @@ void SocketStreamer::Initialize()
 		CStdString target=*it;
 
 		SocketStreamerConnection * ssc = CreateSocketStreamer(target);
-		if (!ssc) {
-			continue;
-		}
-		ssc->m_target = target;
-
-		if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc))
+		if (ssc && !ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc))
 		{
 			delete ssc;
 			FLOG_WARN(getLog(),"Failed to start thread on %s", target);
