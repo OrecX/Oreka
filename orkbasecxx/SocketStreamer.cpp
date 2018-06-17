@@ -18,180 +18,136 @@ static LoggerPtr getLog() {
 	return s_log;
 }
 
-class SocketStreamerConnection {
+CStdString SocketStreamerConnection::ToString() {
+	return CStdString("");
+}
 
-	public:
-		CStdString m_target;
-		TcpAddress m_addr;
-		ACE_SOCK_Stream m_peer;
-		char m_buf[1024];
-		size_t m_bytesRead;
+void SocketStreamerConnection::ParseTarget(CStdString target) 
+{
+	CStdString ip;
 
-		static bool DoesAcceptProtocol(CStdString protocol) {
-			return false; // only let derived classes accept protocols
-		}
+	ChopToken(ip,":",target);
 
-		SocketStreamerConnection(struct in_addr & hostAddr, int port) {
-			m_addr.port = port;
-			memcpy(&m_addr.ip, &hostAddr, sizeof(struct in_addr));
-		}
+	if (!ACE_OS::inet_aton((PCSTR)ip, &m_addr.ip)) {
+		throw "Invalid host:" + ip ;
+	}
 
-		bool Connect()
-		{
-			char szIp[16];
-			ACE_INET_Addr server;
-			ACE_SOCK_Connector connector;
+	m_addr.port = strtol(target,NULL,0);
+	if (m_addr.port == 0) {
+		throw "Invalid  port:0";
+	}
+}
 
-			memset(m_buf, 0, sizeof(m_buf));
+/* SocketStreamerConnection::SocketStreamerConnection(struct in_addr & hostAddr, int port) { */
+/* 	m_addr.port = port; */
+/* 	memcpy(&m_addr.ip, &hostAddr, sizeof(struct in_addr)); */
+/* } */
 
-			memset(&szIp, 0, sizeof(szIp));
-			ACE_OS::inet_ntop(AF_INET, (void*)&m_addr.ip, szIp, sizeof(szIp));
+bool SocketStreamerConnection::Connect()
+{
+	char szIp[16];
+	ACE_INET_Addr server;
+	ACE_SOCK_Connector connector;
 
-			server.set(m_addr.port, szIp);
-			if(connector.connect(m_peer, server) == -1) {
-				return false;
-			}
-			return Init();
-		}
+	memset(m_buf, 0, sizeof(m_buf));
 
-		void Close() {
-			m_peer.close();
-		}
+	memset(&szIp, 0, sizeof(szIp));
+	ACE_OS::inet_ntop(AF_INET, (void*)&m_addr.ip, szIp, sizeof(szIp));
 
-		size_t Recv() {
-			CStdString logMsg;
-			m_bytesRead = m_peer.recv(m_buf, sizeof(m_buf));
+	server.set(m_addr.port, szIp);
+	if(connector.connect(m_peer, server) == -1) {
+		return false;
+	}
+	return Init();
+}
 
-			if (m_bytesRead>0) {
-				ProcessData();
-				FLOG_INFO(getLog(),"DATA : %d",m_bytesRead);
-			}
-			return m_bytesRead;
-		}
+void SocketStreamerConnection::Close() {
+	m_peer.close();
+}
 
-	protected:
-		virtual void ProcessData() {
-		}
-		virtual bool Init() {
-			return true; // default no handshake
-		}
-};
+size_t SocketStreamerConnection::Recv() {
+	CStdString logMsg;
+	m_bytesRead = m_peer.recv(m_buf, sizeof(m_buf));
 
-class Mitel3000Connection : public SocketStreamerConnection {
-	public:
-		Mitel3000Connection(struct in_addr & hostAddr, int port) :  SocketStreamerConnection(hostAddr, port) {
-		}
+	if (m_bytesRead>0) {
+		ProcessData();
+		FLOG_INFO(getLog(),"DATA : %d",m_bytesRead);
+	}
+	return m_bytesRead;
+}
 
-		static bool DoesAcceptProtocol(CStdString protocol) {
-			return 0 == strcmp(protocol, "mitel3000");
-		}
-};
+void SocketStreamerConnection::ProcessData() {
+}
 
-class Mitel5000Connection : public SocketStreamerConnection {
+bool SocketStreamerConnection::Init() {
+	return true; // default no handshake
+}
 
-	public:
-		Mitel5000Connection(struct in_addr & hostAddr, int port, CStdString pass) :  SocketStreamerConnection(hostAddr, port),
-			m_pass(pass)
-		{}
+SocketStreamerConnection* SocketStreamerConnection::Create(CStdString target) 
+{
+	CStdString protocol("mitel3000"); // use this if nothing is specified
+	ChopToken(protocol,"://",target);
+	protocol.ToLower();
 
-		static bool DoesAcceptProtocol(CStdString protocol) {
-			return 0 == strcmp(protocol, "mitel5000");
-		}
+	if (s_factoryMap.find(protocol) == s_factoryMap.end()) {
+		throw "Could not find protocol : " + protocol;
+	}
+	return s_factoryMap[protocol]->create(target);
+}
 
-	protected:
-		CStdString m_pass;
+void SocketStreamerConnection::RegisterType(CStdString typeName, SocketStreamerConnectionFactory *factory) {
+	s_factoryMap[typeName] = factory;
+}
 
-		virtual bool  Init() {
-			int size=7;
-			unsigned char s[100] = {0x03,0x00,0x00,0x00,0x84,0x00,0x00};
-			int i;
-			for (i=0;i<m_pass.length();i++) {
-				s[5+i] = m_pass[i];
-			}
-			size += m_pass.length();
-			s[0] = size-4;
-			s[size-1] = 0x00;
-			s[size-2] = 0x00;
+std::map<CStdString,SocketStreamerConnectionFactory*> SocketStreamerConnection::s_factoryMap;
 
-			m_peer.send_n(s, size);
-			return true;
-		}
+// ------------------------
 
-		virtual void ProcessData() {
-			CStdString logMsg;
-
-			CStdString s("");
-
-			for (int i=0;i<m_bytesRead;i++) {
-				if (isprint(m_buf[i])) {
-					s += m_buf[i];
-				}
-			}
-			FLOG_INFO(getLog(),"DATA : %s",s);
-		}
-};
-
+int *t = new int;
 SocketStreamerConnection* CreateSocketStreamer(CStdString target)
 {
 	CStdString logMsg;
-	struct in_addr hostAddr;
+	/* struct in_addr hostAddr; */
 
-	CStdString protocol("mitel3000"); // use this if nothing is specified
-	CStdString ip;
-	int port;
-	CStdString pass;
 
-	ParseSocketStreamerTarget(target,ip,port,protocol,pass);
+	/* CStdString ip; */
+	/* int port; */
+	/* CStdString pass; */
 
-	if (!ACE_OS::inet_aton((PCSTR)ip, &hostAddr)) {
-		FLOG_ERROR(getLog(),"Invalid host:%s in target:%s -- check SocketStreamerTargets in config.xml", ip);
-		return NULL;
-	}
+	/* ParseSocketStreamerTarget(target,ip,port,protocol,pass); */
 
-	if (port == 0) {
-		FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port);
-		return NULL;
-	}
+	/* if (!ACE_OS::inet_aton((PCSTR)ip, &hostAddr)) { */
+	/* 	FLOG_ERROR(getLog(),"Invalid host:%s in target:%s -- check SocketStreamerTargets in config.xml", ip); */
+	/* 	return NULL; */
+	/* } */
 
-	SocketStreamerConnection * ssc = NULL;
+	/* if (port == 0) { */
+	/* 	FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port); */
+	/* 	return NULL; */
+	/* } */
 
-	if (!ssc && Mitel3000Connection::DoesAcceptProtocol(protocol)) {
-		ssc = new Mitel3000Connection(hostAddr,port);
-	}
+	/* SocketStreamerConnection * ssc = NULL; */
 
-	if (!ssc && Mitel5000Connection::DoesAcceptProtocol(protocol)) {
-		ssc = new Mitel5000Connection(hostAddr,port,pass);
-	}
+	/* if (!ssc && Mitel3000Connection::DoesAcceptProtocol(protocol)) { */
+	/* 	ssc = new Mitel3000Connection(hostAddr,port); */
+	/* } */
 
-	if (ssc) {
-		ssc->m_target = target;
-		return ssc;
-	}
+	/* if (!ssc && Mitel5000Connection::DoesAcceptProtocol(protocol)) { */
+	/* 	ssc = new Mitel5000Connection(hostAddr,port,pass); */
+	/* } */
 
-	FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol);
+	/* if (ssc) { */
+	/* 	ssc->m_target = target; */
+	/* 	return ssc; */
+	/* } */
+
+	/* FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol); */
 	return NULL;
 }
 
-void SocketStreamer::Initialize()
-{
-	std::list<CStdString>::iterator it;
-	CStdString logMsg;
 
-	for (it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++)
-	{
-		CStdString target=*it;
-
-		SocketStreamerConnection * ssc = CreateSocketStreamer(target);
-		if (ssc && !ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc))
-		{
-			delete ssc;
-			FLOG_WARN(getLog(),"Failed to start thread on %s", target);
-		}
-	}
-}
-
-
-void SocketStreamer::ThreadHandler(void *args)
+/* void SocketStreamer::ThreadHandler(void *args) */
+void ThreadHandler(void *args)
 {
 	SetThreadName("orka:sockstream");
 
@@ -236,3 +192,25 @@ void SocketStreamer::ThreadHandler(void *args)
 	}
 }
 
+void SocketStreamer::Initialize()
+{
+	CStdString logMsg;
+
+	for (std::list<CStdString>::iterator it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++)
+	{
+		CStdString target=*it;
+
+		try 
+		{
+			SocketStreamerConnection * ssc = SocketStreamerConnection::Create(target);
+			if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc)) {
+				FLOG_WARN(getLog(),"Failed to start thread on %s", target);
+			}
+		}
+		catch(CStdString s) 
+		{
+		/* FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port); */
+			// log the error
+		}
+	}
+}
