@@ -12,6 +12,26 @@
  */
 
 #include "SocketStreamer.h"
+#include "ace/Thread_Manager.h"
+#include "LogManager.h"
+#include "Utils.h"
+#include "ace/SOCK_Connector.h"
+#include "ace/OS_NS_unistd.h"
+
+
+/* /1* #ifdef UTEST *1/ */
+
+/* #undef FLOG_DEBUG */
+/* #undef FLOG_INFO */
+/* #undef FLOG_WARN */
+/* #undef FLOG_ERROR */
+
+/* #define FLOG_DEBUG(logger,fmt, ...) ; */
+/* #define FLOG_INFO(logger,fmt, ...) ; */
+/* #define FLOG_WARN(logger,fmt, ...) ; */
+/* #define FLOG_ERROR(logger,fmt, ...) ; */
+
+/* /1* #endif *1/ */
 
 static LoggerPtr getLog() {
 	static LoggerPtr s_log = Logger::getLogger("socketstreamer");
@@ -72,14 +92,14 @@ bool SocketStreamer::Parse(CStdString target)
 	CStdString ip;
 	ChopToken(ip,":",target);
 
-	if (!ACE_OS::inet_aton((PCSTR)ip, &m_addr.ip)) {
+	if (!ACE_OS::inet_aton((PCSTR)ip, &m_ip)) {
 		m_logMsg.Format("Invalid host:%s", ip);
 		return false;
 	}
 	m_logMsg += CStdString(" host:") + ip;
 
-	m_addr.port = strtol(target,NULL,0);
-	if (m_addr.port == 0) {
+	m_port = strtol(target,NULL,0);
+	if (m_port == 0) {
 		m_logMsg.Format("Invalid port:%s", target);
 		return false;
 	}
@@ -97,9 +117,9 @@ bool SocketStreamer::Connect()
 	memset(m_buf, 0, sizeof(m_buf));
 
 	memset(&szIp, 0, sizeof(szIp));
-	ACE_OS::inet_ntop(AF_INET, (void*)&m_addr.ip, szIp, sizeof(szIp));
+	ACE_OS::inet_ntop(AF_INET, (void*)&m_ip, szIp, sizeof(szIp));
 
-	server.set(m_addr.port, szIp);
+	server.set(m_port, szIp);
 	if(connector.connect(m_peer, server) == -1) {
 		return false;
 	}
@@ -129,7 +149,7 @@ bool SocketStreamer::Handshake() {
 	return true; // default no handshake
 }
 
-void SocketStreamer::Initialize(SocketStreamerFactory *factory)
+void SocketStreamer::Initialize(std::list<CStdString>& targetList, SocketStreamerFactory *factory)
 {
 	CStdString logMsg;
 	SocketStreamerFactory ssf;
@@ -138,7 +158,7 @@ void SocketStreamer::Initialize(SocketStreamerFactory *factory)
 		factory = &ssf;
 	}
 
-	for (std::list<CStdString>::iterator it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++)
+	for (std::list<CStdString>::iterator it = targetList.begin(); it != targetList.end(); it++)
 	{
 		CStdString target=*it;
 
@@ -152,7 +172,7 @@ void SocketStreamer::Initialize(SocketStreamerFactory *factory)
 			ss->m_logMsg.Format("protocol:%s",protocol);
 
 			if (!ss->Parse(target) || !ss->Spawn()) {
-				FLOG_ERROR(getLog(),"%s - %s", *it, ss->m_logMsg);
+				FLOG_ERROR(getLog(),"Target:%s - %s", *it, ss->m_logMsg);
 				delete ss;
 			}
 		}
@@ -167,155 +187,4 @@ bool SocketStreamer::Spawn()
 	}
 	return true;
 }
-
-/* void SocketStreamer::Initialize(CSt) */
-/* { */
-/* 	CStdString logMsg; */
-
-/* 	for (std::list<CStdString>::iterator it = CONFIG.m_socketStreamerTargets.begin(); it != CONFIG.m_socketStreamerTargets.end(); it++) */
-/* 	{ */
-/* 		CStdString target=*it; */
-
-/* 		try */ 
-/* 		{ */
-/* 			SocketStreamerConnection * ssc = SocketStreamerConnection::Create(target); */
-/* 			if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)ssc)) { */
-/* 				FLOG_WARN(getLog(),"Failed to start thread on %s", target); */
-/* 			} */
-/* 		} */
-/* 		catch(CStdString s) */ 
-/* 		{ */
-/* 		/1* FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port); *1/ */
-/* 			// log the error */
-/* 		} */
-/* 	} */
-/* } */
-
-
-
-/* CStdString SocketStreamerConnection::ToString() { */
-/* 	return CStdString(""); */
-/* } */
-
-/* void SocketStreamerConnection::ParseTarget(CStdString target) */ 
-/* { */
-/* 	CStdString ip; */
-
-/* 	ChopToken(ip,":",target); */
-
-/* 	if (!ACE_OS::inet_aton((PCSTR)ip, &m_addr.ip)) { */
-/* 		throw "Invalid host:" + ip ; */
-/* 	} */
-
-/* 	m_addr.port = strtol(target,NULL,0); */
-/* 	if (m_addr.port == 0) { */
-/* 		throw "Invalid  port:0"; */
-/* 	} */
-/* } */
-
-/* /1* SocketStreamerConnection::SocketStreamerConnection(struct in_addr & hostAddr, int port) { *1/ */
-/* /1* 	m_addr.port = port; *1/ */
-/* /1* 	memcpy(&m_addr.ip, &hostAddr, sizeof(struct in_addr)); *1/ */
-/* /1* } *1/ */
-
-/* bool SocketStreamerConnection::Connect() */
-/* { */
-/* 	char szIp[16]; */
-/* 	ACE_INET_Addr server; */
-/* 	ACE_SOCK_Connector connector; */
-
-/* 	memset(m_buf, 0, sizeof(m_buf)); */
-
-/* 	memset(&szIp, 0, sizeof(szIp)); */
-/* 	ACE_OS::inet_ntop(AF_INET, (void*)&m_addr.ip, szIp, sizeof(szIp)); */
-
-/* 	server.set(m_addr.port, szIp); */
-/* 	if(connector.connect(m_peer, server) == -1) { */
-/* 		return false; */
-/* 	} */
-/* 	return Init(); */
-/* } */
-
-/* void SocketStreamerConnection::Close() { */
-/* 	m_peer.close(); */
-/* } */
-
-/* size_t SocketStreamerConnection::Recv() { */
-/* 	CStdString logMsg; */
-/* 	m_bytesRead = m_peer.recv(m_buf, sizeof(m_buf)); */
-
-/* 	if (m_bytesRead>0) { */
-/* 		ProcessData(); */
-/* 		FLOG_INFO(getLog(),"DATA : %d",m_bytesRead); */
-/* 	} */
-/* 	return m_bytesRead; */
-/* } */
-
-/* void SocketStreamerConnection::ProcessData() { */
-/* } */
-
-/* bool SocketStreamerConnection::Init() { */
-/* 	return true; // default no handshake */
-/* } */
-
-/* SocketStreamerConnection* SocketStreamerConnection::Create(CStdString target) */ 
-/* { */
-/* 	CStdString protocol("mitel3000"); // use this if nothing is specified */
-/* 	ChopToken(protocol,"://",target); */
-/* 	protocol.ToLower(); */
-
-/* 	if (s_factoryMap.find(protocol) == s_factoryMap.end()) { */
-/* 		throw "Could not find protocol : " + protocol; */
-/* 	} */
-/* 	return s_factoryMap[protocol]->create(target); */
-/* } */
-
-/* void SocketStreamerConnection::RegisterType(CStdString typeName, SocketStreamerConnectionFactory *factory) { */
-/* 	s_factoryMap[typeName] = factory; */
-/* } */
-
-/* std::map<CStdString,SocketStreamerConnectionFactory*> SocketStreamerConnection::s_factoryMap; */
-
-/* // ------------------------ */
-
-/* SocketStreamerConnection* CreateSocketStreamer(CStdString target) */
-/* { */
-/* 	CStdString logMsg; */
-/* 	/1* struct in_addr hostAddr; *1/ */
-
-
-/* 	/1* CStdString ip; *1/ */
-/* 	/1* int port; *1/ */
-/* 	/1* CStdString pass; *1/ */
-
-/* 	/1* ParseSocketStreamerTarget(target,ip,port,protocol,pass); *1/ */
-
-/* 	/1* if (!ACE_OS::inet_aton((PCSTR)ip, &hostAddr)) { *1/ */
-/* 	/1* 	FLOG_ERROR(getLog(),"Invalid host:%s in target:%s -- check SocketStreamerTargets in config.xml", ip); *1/ */
-/* 	/1* 	return NULL; *1/ */
-/* 	/1* } *1/ */
-
-/* 	/1* if (port == 0) { *1/ */
-/* 	/1* 	FLOG_ERROR(getLog(),"Invalid  port:%d in target:%s -- check SocketStreamerTargets in config.xml", port); *1/ */
-/* 	/1* 	return NULL; *1/ */
-/* 	/1* } *1/ */
-
-/* 	/1* SocketStreamerConnection * ssc = NULL; *1/ */
-
-/* 	/1* if (!ssc && Mitel3000Connection::DoesAcceptProtocol(protocol)) { *1/ */
-/* 	/1* 	ssc = new Mitel3000Connection(hostAddr,port); *1/ */
-/* 	/1* } *1/ */
-
-/* 	/1* if (!ssc && Mitel5000Connection::DoesAcceptProtocol(protocol)) { *1/ */
-/* 	/1* 	ssc = new Mitel5000Connection(hostAddr,port,pass); *1/ */
-/* 	/1* } *1/ */
-
-/* 	/1* if (ssc) { *1/ */
-/* 	/1* 	ssc->m_target = target; *1/ */
-/* 	/1* 	return ssc; *1/ */
-/* 	/1* } *1/ */
-
-/* 	/1* FLOG_ERROR(getLog(),"Unsupported protocol: %s -- check SocketStreamerTargets in config.xml", protocol); *1/ */
-/* 	return NULL; */
-/* } */
 
