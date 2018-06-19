@@ -40,7 +40,7 @@ protected:
 	in_addr m_ip;
 	unsigned short m_port;
 	ACE_SOCK_Stream m_peer;
-	char m_buf[1024];
+	unsigned char m_buf[1024];
 	size_t m_bytesRead;
 	static void ThreadHandler(void *args);
 
