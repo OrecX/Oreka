@@ -18,7 +18,6 @@
 #include "ace/SOCK_Connector.h"
 #include "ace/OS_NS_unistd.h"
 
-
 static LoggerPtr getLog() {
 	static LoggerPtr s_log = Logger::getLogger("socketstreamer");
 	return s_log;
@@ -168,13 +167,12 @@ bool SocketStreamer::Spawn()
 {
 	CStdString logMsg;
 
-#ifndef UTEST //disable if unit testing
+#ifndef UNIT_TESTING //disable if unit testing
 	if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)this)) {
 		m_logMsg = "Failed to start thread";
 		return false;
 	}
 #endif
-
 	FLOG_INFO(getLog(), "Succesfully created thread (%s)", m_logMsg);
 	return true;
 }

@@ -18,6 +18,7 @@
 #include "ace/Singleton.h"
 #include "dll.h"
 #include "OrkBase.h"
+#include "StdString.h"
 
 using namespace log4cxx;
 
@@ -57,7 +58,8 @@ private:
 #define FLOG_WARN(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__); LOG4CXX_WARN(logger, logMsg);
 #define FLOG_ERROR(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__); LOG4CXX_ERROR(logger, logMsg);
 
-#ifdef UNITTESTING
+
+#ifdef UNIT_TESTING
 
 void TEST_LOG_INFO(CStdString& logMsg);
 void TEST_LOG_DEBUG(CStdString& logMsg);
