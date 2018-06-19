@@ -19,20 +19,6 @@
 #include "ace/OS_NS_unistd.h"
 
 
-/* /1* #ifdef UTEST *1/ */
-
-/* #undef FLOG_DEBUG */
-/* #undef FLOG_INFO */
-/* #undef FLOG_WARN */
-/* #undef FLOG_ERROR */
-
-/* #define FLOG_DEBUG(logger,fmt, ...) ; */
-/* #define FLOG_INFO(logger,fmt, ...) ; */
-/* #define FLOG_WARN(logger,fmt, ...) ; */
-/* #define FLOG_ERROR(logger,fmt, ...) ; */
-
-/* /1* #endif *1/ */
-
 static LoggerPtr getLog() {
 	static LoggerPtr s_log = Logger::getLogger("socketstreamer");
 	return s_log;
@@ -46,7 +32,6 @@ void SocketStreamer::ThreadHandler(void *args)
 	SocketStreamer* ssc = (SocketStreamer*) args; 
 
 	CStdString params = ssc->m_logMsg;
-	FLOG_INFO(getLog(), "Succesfully created thread (%s)", params);
 
 	CStdString ipPort = params;
 	bool connected = false;
@@ -181,10 +166,16 @@ void SocketStreamer::Initialize(std::list<CStdString>& targetList, SocketStreame
 
 bool SocketStreamer::Spawn() 
 {
+	CStdString logMsg;
+
+#ifndef UTEST //disable if unit testing
 	if (!ACE_Thread_Manager::instance()->spawn(ACE_THR_FUNC(ThreadHandler), (void*)this)) {
 		m_logMsg = "Failed to start thread";
 		return false;
 	}
+#endif
+
+	FLOG_INFO(getLog(), "Succesfully created thread (%s)", m_logMsg);
 	return true;
 }
 

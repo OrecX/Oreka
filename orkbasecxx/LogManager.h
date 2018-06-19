@@ -57,5 +57,24 @@ private:
 #define FLOG_WARN(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__); LOG4CXX_WARN(logger, logMsg);
 #define FLOG_ERROR(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__); LOG4CXX_ERROR(logger, logMsg);
 
+#ifdef UNITTESTING
+
+void TEST_LOG_INFO(CStdString& logMsg);
+void TEST_LOG_DEBUG(CStdString& logMsg);
+void TEST_LOG_WARN(CStdString& logMsg);
+void TEST_LOG_ERROR(CStdString& logMsg);
+
+#undef FLOG_DEBUG
+#undef FLOG_INFO
+#undef FLOG_WARN
+#undef FLOG_ERROR
+
+#define FLOG_DEBUG(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__);TEST_LOG_DEBUG(logMsg);
+#define FLOG_INFO(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__);TEST_LOG_INFO(logMsg);
+#define FLOG_WARN(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__);TEST_LOG_WARN(logMsg);
+#define FLOG_ERROR(logger,fmt, ...) logMsg.Format(fmt,__VA_ARGS__);TEST_LOG_ERROR(logMsg);
+
+#endif
+
 #endif
 
