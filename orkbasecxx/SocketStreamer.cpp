@@ -64,7 +64,7 @@ void SocketStreamer::ThreadHandler(void *args)
 
 		bytesSoFar += bytesRead;
 		if (time(NULL) - lastLogTime > 60 ) {
-			FLOG_INFO(getLog(),"Read %d from %s so far", FormatDataSize(bytesSoFar), ipPort);
+			FLOG_INFO(getLog(),"Read %s from %s so far", FormatDataSize(bytesSoFar), ipPort);
 			lastLogTime = time(NULL);
 		}
 		NANOSLEEP(0,1);
@@ -173,7 +173,7 @@ bool SocketStreamer::Spawn()
 		return false;
 	}
 #endif
-	FLOG_INFO(getLog(), "Succesfully created thread (%s)", m_logMsg);
+	FLOG_INFO(getLog(), "Successfully created thread (%s)", m_logMsg);
 	return true;
 }
 
