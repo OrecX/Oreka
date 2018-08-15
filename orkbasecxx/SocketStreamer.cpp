@@ -120,7 +120,6 @@ size_t SocketStreamer::Recv() {
 
 	if (m_bytesRead>0) {
 		ProcessData();
-		FLOG_INFO(getLog(),"DATA : %d",m_bytesRead);
 	}
 	return m_bytesRead;
 }
